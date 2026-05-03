@@ -20,6 +20,8 @@ export default class WakaTime extends Plugin {
   fetchTodayInterval = 60000;
   lastFile: string;
   lastHeartbeat = 0;
+  private lastLineCountPerFile = new Map<string, number>();
+  private lineChangesPerFile = new Map<string, number>();
 
   async onload() {
     this.logger = new Logger(LogLevel.INFO);
@@ -99,6 +101,17 @@ export default class WakaTime extends Plugin {
     this.registerDomEvent(document, 'keydown', (evt: KeyboardEvent) => {
       this.onEvent(false);
     });
+    this.registerEvent(
+      this.app.workspace.on('editor-change', (editor) => {
+        const activeFile = this.app.workspace.getActiveFile();
+        if (!activeFile) return;
+        const key = activeFile.path;
+        const currentCount = editor.lineCount();
+        const lastCount = this.lastLineCountPerFile.get(key) ?? currentCount;
+        this.lineChangesPerFile.set(key, (this.lineChangesPerFile.get(key) ?? 0) + (currentCount - lastCount));
+        this.lastLineCountPerFile.set(key, currentCount);
+      }),
+    );
   }
 
   private onEvent(isWrite: boolean) {
@@ -111,7 +124,9 @@ export default class WakaTime extends Plugin {
     const file = `${this.app.vault.adapter.basePath}/${activeFile.path}`;
     const time: number = Date.now();
     if (isWrite || this.enoughTimePassed(time) || this.lastFile !== file) {
-      this.sendHeartbeat(file, time, cursor.line, cursor.ch, isWrite, view.editor.lineCount());
+      const humanLineChanges = this.lineChangesPerFile.get(activeFile.path) ?? 0;
+      this.lineChangesPerFile.set(activeFile.path, 0);
+      this.sendHeartbeat(file, time, cursor.line, cursor.ch, isWrite, view.editor.lineCount(), humanLineChanges);
       this.lastFile = file;
       this.lastHeartbeat = time;
     }
@@ -146,10 +161,11 @@ export default class WakaTime extends Plugin {
     cursorpos: number,
     isWrite: boolean,
     linesInFile: number,
+    humanLineChanges: number,
   ): void {
     this.options.getApiKey((apiKey) => {
       if (!apiKey) return;
-      this._sendHeartbeat(file, time, lineno, cursorpos, isWrite, linesInFile);
+      this._sendHeartbeat(file, time, lineno, cursorpos, isWrite, linesInFile, humanLineChanges);
     });
   }
 
@@ -160,6 +176,7 @@ export default class WakaTime extends Plugin {
     cursorpos: number,
     isWrite: boolean,
     linesInFile: number,
+    humanLineChanges: number,
   ): void {
     if (!this.dependencies.isCliInstalled()) return;
 
@@ -173,6 +190,7 @@ export default class WakaTime extends Plugin {
     args.push('--lineno', String(lineno + 1));
     args.push('--cursorpos', String(cursorpos + 1));
     args.push('--lines-in-file', String(linesInFile));
+    if (humanLineChanges !== 0) args.push('--human-line-changes', String(humanLineChanges));
 
     if (isWrite) args.push('--write');
 
