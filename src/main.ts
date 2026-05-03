@@ -111,7 +111,7 @@ export default class WakaTime extends Plugin {
     const file = `${this.app.vault.adapter.basePath}/${activeFile.path}`;
     const time: number = Date.now();
     if (isWrite || this.enoughTimePassed(time) || this.lastFile !== file) {
-      this.sendHeartbeat(file, time, cursor.line, cursor.ch, isWrite);
+      this.sendHeartbeat(file, time, cursor.line, cursor.ch, isWrite, view.editor.lineCount());
       this.lastFile = file;
       this.lastHeartbeat = time;
     }
@@ -145,10 +145,11 @@ export default class WakaTime extends Plugin {
     lineno: number,
     cursorpos: number,
     isWrite: boolean,
+    linesInFile: number,
   ): void {
     this.options.getApiKey((apiKey) => {
       if (!apiKey) return;
-      this._sendHeartbeat(file, time, lineno, cursorpos, isWrite);
+      this._sendHeartbeat(file, time, lineno, cursorpos, isWrite, linesInFile);
     });
   }
 
@@ -158,6 +159,7 @@ export default class WakaTime extends Plugin {
     lineno: number,
     cursorpos: number,
     isWrite: boolean,
+    linesInFile: number,
   ): void {
     if (!this.dependencies.isCliInstalled()) return;
 
@@ -170,6 +172,7 @@ export default class WakaTime extends Plugin {
 
     args.push('--lineno', String(lineno + 1));
     args.push('--cursorpos', String(cursorpos + 1));
+    args.push('--lines-in-file', String(linesInFile));
 
     if (isWrite) args.push('--write');
 
